@@ -1,0 +1,32 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python Cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Large Model weights / binary checkpoints
+models/*.pt
+models/*.pth
+models/*.bin
+models/*.joblib
+
+# Tokenizer files (can be recreated, so they are typically ignored)
+models/*.json
+
+# Data and large zip files
+data/
+*.zip
+*.csv
+*.npy
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+**/_ipynb_checkpoints/
+
+# OS metadata
+.DS_Store

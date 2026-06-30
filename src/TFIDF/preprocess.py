@@ -1,5 +1,9 @@
 import pandas as pd
 from tqdm import tqdm
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+
 
 class TFIDFPreprocessor:
     OPTIONS = ['A', 'B', 'C', 'D', 'E']
@@ -31,3 +35,4 @@ class TFIDFPreprocessor:
         df = self.expand_dataframe(df, is_train=is_train)
         df = self.build_text(df)
         return df
+
