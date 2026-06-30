@@ -11,6 +11,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 import wandb
 
 # Add relative paths for models/ and SCRATCH/ folders
@@ -42,6 +46,199 @@ CFG = {
     'project': 'smart-mcq-solver-scratch',
     'run_name': 'scratch-model-5fold'
 }
+
+
+def training_model(model, optimizer, train, val, epochs, patience, loss_fn, scheduler, device, fold, models_dir, use_amp=False, scaler=None, scheduler_step_per_epoch=False):
+    """
+    Generic training loop for any PyTorch model.
+    Handles inputs of type: single tensor, list/tuple of tensors, or dictionary of tensors.
+    Supports early stopping based on MAP@3, checkpoints, confusion matrices, and Wandb logging.
+    """
+    patience_counter = 0
+    best_val = 0.0
+    best_val_preds = []
+    best_val_targets = []
+    
+    for e in range(epochs):
+        if patience_counter > patience:
+            print(f"Early stopping triggered")
+            break
+        
+        # training loop
+        model.train()
+        train_losses = []
+        all_train_preds = []
+        all_train_targets = []
+        
+        for i, batch in enumerate(tqdm(train, desc=f"Epoch {e} Train")):           
+            # Generic batch unpacking
+            if isinstance(batch, dict):
+                label_key = next((k for k in ['labels', 'label', 'target', 'targets', 'y'] if k in batch), None)
+                if label_key is not None:
+                    y = batch[label_key].to(device)
+                    x = {k: v.to(device) for k, v in batch.items() if k != label_key}
+                else:
+                    x = {k: v.to(device) for k, v in batch.items()}
+                    y = None
+            elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                x, y = batch
+                y = y.to(device)
+                if isinstance(x, dict):
+                    x = {k: v.to(device) for k, v in x.items()}
+                elif isinstance(x, (list, tuple)):
+                    x = [item.to(device) for item in x]
+                else:
+                    x = x.to(device)
+            else:
+                x = batch.to(device)
+                y = None
+
+            optimizer.zero_grad()
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                # Forward pass
+                if isinstance(x, dict):
+                    preds = model(**x)
+                elif isinstance(x, (list, tuple)):
+                    preds = model(*x)
+                else:
+                    preds = model(x)
+                    
+                loss = loss_fn(preds, y)
+                
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                
+            # Step scheduler if per-batch
+            if scheduler is not None and not scheduler_step_per_epoch and not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step()
+                
+            train_losses.append(loss.item())
+            _, predicted_classes = torch.max(preds, 1) 
+            all_train_preds.extend(predicted_classes.cpu().numpy())
+            all_train_targets.extend(y.cpu().numpy() if y is not None else [])
+
+        train_acc = accuracy_score(all_train_targets, all_train_preds) if len(all_train_targets) > 0 else 0.0
+        train_f1 = f1_score(all_train_targets, all_train_preds, average='macro') if len(all_train_targets) > 0 else 0.0
+        avg_train_loss = np.mean(train_losses)
+        print(f"Epoch: {e}, Training_f1_macro: {train_f1:.4f}, Training_accuracy: {train_acc:.4f}, Avg_train_loss: {avg_train_loss:.4f}")
+
+        # validation loop
+        model.eval()
+        all_val_preds = []
+        all_val_targets = []
+        all_val_logits = []
+        val_losses = []
+        
+        with torch.inference_mode(): 
+            for batch in val:
+                # Generic batch unpacking
+                if isinstance(batch, dict):
+                    label_key = next((k for k in ['labels', 'label', 'target', 'targets', 'y'] if k in batch), None)
+                    if label_key is not None:
+                        y = batch[label_key].to(device)
+                        x = {k: v.to(device) for k, v in batch.items() if k != label_key}
+                    else:
+                        x = {k: v.to(device) for k, v in batch.items()}
+                        y = None
+                elif isinstance(batch, (list, tuple)) and len(batch) == 2:
+                    x, y = batch
+                    y = y.to(device)
+                    if isinstance(x, dict):
+                        x = {k: v.to(device) for k, v in x.items()}
+                    elif isinstance(x, (list, tuple)):
+                        x = [item.to(device) for item in x]
+                    else:
+                        x = x.to(device)
+                else:
+                    x = batch.to(device)
+                    y = None
+                
+                with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                    if isinstance(x, dict):
+                        preds = model(**x)
+                    elif isinstance(x, (list, tuple)):
+                        preds = model(*x)
+                    else:
+                        preds = model(x)
+                        
+                    loss = loss_fn(preds, y)
+                val_losses.append(loss.item())
+                all_val_logits.append(preds.cpu().numpy())
+                
+                _, predicted_classes = torch.max(preds, 1)
+                all_val_preds.extend(predicted_classes.cpu().numpy())
+                all_val_targets.extend(y.cpu().numpy() if y is not None else [])
+                
+        val_acc = accuracy_score(all_val_targets, all_val_preds) if len(all_val_targets) > 0 else 0.0
+        val_f1 = f1_score(all_val_targets, all_val_preds, average='macro') if len(all_val_targets) > 0 else 0.0
+        avg_val_loss = np.mean(val_losses)
+        
+        # Calculate MAP@3
+        vlog = np.vstack(all_val_logits)
+        val_map3 = map3(all_val_targets, softmax_np(vlog)) if len(all_val_targets) > 0 else 0.0
+        
+        # Step scheduler if per-epoch or ReduceLROnPlateau
+        if scheduler is not None:
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(val_map3)        
+            elif scheduler_step_per_epoch:
+                scheduler.step()
+            
+        print(f"Epoch: {e}, validation_map3: {val_map3:.4f}, validation_accuracy: {val_acc:.4f}, Avg_val_loss: {avg_val_loss:.4f}")
+
+        # early stopping and model checkpointing based on MAP@3
+        checkpoint_path = os.path.join(models_dir, f"scratch_model_fold_{fold}.pt")
+        if val_map3 > best_val:
+            best_val = val_map3
+            patience_counter = 0 
+            torch.save(model.state_dict(), checkpoint_path)
+            best_val_preds = all_val_preds
+            best_val_targets = all_val_targets
+            print(f"  ✅ Best validation MAP@3 updated: {best_val:.4f}. Checkpoint saved.")
+        else:
+            patience_counter += 1
+            print(f"Patience: {patience_counter}/{patience}")
+            
+        # Log metrics to wandb
+        if wandb.run is not None:
+            wandb.log({
+                f"fold_{fold+1}/train_accuracy": train_acc,
+                f"fold_{fold+1}/train_f1_macro": train_f1,
+                f"fold_{fold+1}/train_loss": avg_train_loss,
+                f"fold_{fold+1}/val_accuracy": val_acc,
+                f"fold_{fold+1}/val_map3": val_map3,
+                f"fold_{fold+1}/val_loss": avg_val_loss,
+                "epoch": e
+            })
+            
+    # Load best weights
+    checkpoint_path = os.path.join(models_dir, f"scratch_model_fold_{fold}.pt")
+    model.load_state_dict(torch.load(checkpoint_path))
+    
+    # Validation report and plot
+    if len(best_val_targets) > 0:
+        print(f"\nClassification Report for Fold {fold+1}:")
+        print(classification_report(best_val_targets, best_val_preds, target_names=OPTIONS))
+        
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(confusion_matrix(best_val_targets, best_val_preds), annot=True, fmt='d', cmap='Blues',
+                    xticklabels=OPTIONS, yticklabels=OPTIONS)
+        plt.title(f"Confusion Matrix - Fold {fold+1}")
+        plt.ylabel("Actual")
+        plt.xlabel("Predicted")
+        plt.savefig(os.path.join(models_dir, f"confusion_matrix_fold_{fold}.png"))
+        plt.close()
+    
+    return model
+
 
 def main():
     parser = argparse.ArgumentParser(description="Train Scratch MCQ Transformer model with CV.")
@@ -139,89 +336,25 @@ def main():
         sched = torch.optim.lr_scheduler.LambdaLR(
             opt, lr_lambda=lambda s: warmup_cosine(s, warmup_steps, total_steps)
         )
+        
+        loss_fn = nn.CrossEntropyLoss(label_smoothing=CFG['label_smoothing'])
 
-        best, best_state, wait = 0.0, None, 0
-
-        for ep in range(CFG['epochs']):
-            # Train Step
-            model.train()
-            tl, tc, tt = 0.0, 0, 0
-            for b in tr_ld:
-                ids  = b['input_ids'].to(DEVICE, non_blocking=USE_AMP)
-                tids = b['token_type_ids'].to(DEVICE, non_blocking=USE_AMP)
-                mask = b['attention_mask'].to(DEVICE, non_blocking=USE_AMP)
-                lbl  = b['labels'].to(DEVICE, non_blocking=USE_AMP)
-                
-                opt.zero_grad(set_to_none=True)
-                with torch.amp.autocast(device_type=DEVICE.type, enabled=USE_AMP):
-                    logits = model(ids, tids, mask)
-                    loss = F.cross_entropy(logits, lbl, label_smoothing=CFG['label_smoothing'])
-                    
-                scaler.scale(loss).backward()
-                scaler.unscale_(opt)
-                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                scaler.step(opt)
-                scaler.update()
-                sched.step()
-                
-                tl += loss.item()
-                tc += (logits.argmax(-1) == lbl).sum().item()
-                tt += lbl.size(0)
-
-            # Validation Step
-            model.eval()
-            vlog, vlbl = [], []
-            with torch.no_grad():
-                for b in vl_ld:
-                    ids  = b['input_ids'].to(DEVICE, non_blocking=USE_AMP)
-                    tids = b['token_type_ids'].to(DEVICE, non_blocking=USE_AMP)
-                    mask = b['attention_mask'].to(DEVICE, non_blocking=USE_AMP)
-                    lbl  = b['labels'].to(DEVICE, non_blocking=USE_AMP)
-                    
-                    with torch.amp.autocast(device_type=DEVICE.type, enabled=USE_AMP):
-                        logits = model(ids, tids, mask)
-                    vlog.append(logits.cpu().numpy())
-                    vlbl.append(lbl.cpu().numpy())
-
-            vlog, vlbl = np.vstack(vlog), np.concatenate(vlbl)
-            vacc = (vlog.argmax(1) == vlbl).mean()
-            vm3  = map3(vlbl, softmax_np(vlog))
-            
-            epoch_loss = tl / len(tr_ld)
-            epoch_acc = tc / tt
-            print(f"Ep{ep+1:02d}: loss={epoch_loss:.3f} acc={epoch_acc:.3f} | val_acc={vacc:.3f} map3={vm3:.3f}")
-
-            # Log to wandb
-            if CFG['use_wandb']:
-                wandb.log({
-                    f"fold_{fold+1}/train_loss": epoch_loss,
-                    f"fold_{fold+1}/train_acc": epoch_acc,
-                    f"fold_{fold+1}/val_acc": vacc,
-                    f"fold_{fold+1}/val_map3": vm3,
-                    f"fold_{fold+1}/lr": sched.get_last_lr()[0],
-                    "epoch": ep + 1
-                })
-
-            # Early Stopping check
-            if vm3 > best:
-                best = vm3
-                best_state = {k: v.clone() for k, v in model.state_dict().items()}
-                wait = 0
-                print(f"  ✅ Best MAP@3 Updated: {best:.4f}")
-            else:
-                wait += 1
-                if wait >= CFG['patience']:
-                    print(f"  Early stopping triggered after {CFG['patience']} epochs without improvement.")
-                    break
-
-        # Restore best weights and predict OOF
-        model.load_state_dict(best_state)
-        model.eval()
-
-        # Save model checkpoint
-        model_path = os.path.join(models_dir, f"scratch_model_fold_{fold}.pt")
-        torch.save(best_state, model_path)
-        print(f"  Saved fold {fold} model state dict to {model_path}")
+        model = training_model(
+            model=model,
+            optimizer=opt,
+            train=tr_ld,
+            val=vl_ld,
+            epochs=CFG['epochs'],
+            patience=CFG['patience'],
+            loss_fn=loss_fn,
+            scheduler=sched,
+            device=DEVICE,
+            fold=fold,
+            models_dir=models_dir,
+            use_amp=USE_AMP,
+            scaler=scaler,
+            scheduler_step_per_epoch=False
+        )
 
         vlog = []
         with torch.no_grad():
@@ -236,10 +369,6 @@ def main():
 
         print(f"  Fold time: {time.time()-t_fold:.1f}s")
         
-        # Log best MAP@3 for the fold
-        if CFG['use_wandb']:
-            wandb.run.summary[f"fold_{fold+1}_best_map3"] = best
-
         del model
         if USE_AMP:
             torch.cuda.empty_cache()
