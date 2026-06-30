@@ -32,6 +32,7 @@ CFG = {
 def main():
     parser = argparse.ArgumentParser(description="Run Scratch MCQ Transformer inference.")
     parser.add_argument("--models_dir", type=str, default=None, help="Directory containing the model checkpoints and tokenizers")
+    parser.add_argument("--submission_path", type=str, default="submission.csv", help="Output path for submission CSV")
     args = parser.parse_args()
 
     set_seed(42)
@@ -62,6 +63,7 @@ def main():
         models_dir = os.path.abspath(args.models_dir)
     else:
         models_dir = os.path.abspath(os.path.join(base_dir, '../../models'))
+
 
     test_p = np.zeros((len(test_df), 5))
 
@@ -122,11 +124,28 @@ def main():
 
     preds = [' '.join([IDX2LABEL[i] for i in np.argsort(p)[::-1][:3]]) for p in test_probs]
     sub = pd.DataFrame({'id': test_df['id'], 'Prediction': preds})
-    sub.to_csv('submission.csv', index=False)
+    sub.to_csv(args.submission_path, index=False)
+    print(f"✅ Submission saved to {args.submission_path}!")
 
-    print("\n--- Submission Sample ---")
-    print(sub.head())
-    print("✅ submission.csv saved!")
+    # Fallback copy for Kaggle environment
+    if os.path.exists('/kaggle/working'):
+        import shutil
+        target_sub = '/kaggle/working/submission.csv'
+        target_probs = '/kaggle/working/scratch_test_probs.npy'
+        
+        if os.path.abspath(args.submission_path) != target_sub:
+            try:
+                shutil.copy(args.submission_path, target_sub)
+                print(f"✅ Copied submission.csv to {target_sub} for Kaggle.")
+            except Exception as e:
+                print(f"⚠️ Failed to copy submission to {target_sub}: {e}")
+                
+        if os.path.abspath('scratch_test_probs.npy') != target_probs:
+            try:
+                shutil.copy('scratch_test_probs.npy', target_probs)
+                print(f"✅ Copied scratch_test_probs.npy to {target_probs} for Kaggle.")
+            except Exception as e:
+                print(f"⚠️ Failed to copy scratch_test_probs.npy to {target_probs}: {e}")
 
 if __name__ == "__main__":
     main()

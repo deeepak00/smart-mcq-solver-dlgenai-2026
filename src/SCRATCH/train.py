@@ -383,6 +383,17 @@ def main():
     np.save('scratch_oof_probs.npy', oof_probs)
     print("✅ scratch_oof_probs.npy saved.")
 
+    # Fallback copy for Kaggle environment
+    if os.path.exists('/kaggle/working'):
+        import shutil
+        target_oof = '/kaggle/working/scratch_oof_probs.npy'
+        if os.path.abspath('scratch_oof_probs.npy') != target_oof:
+            try:
+                shutil.copy('scratch_oof_probs.npy', target_oof)
+                print(f"✅ Copied scratch_oof_probs.npy to {target_oof} for Kaggle.")
+            except Exception as e:
+                print(f"⚠️ Failed to copy scratch_oof_probs.npy to {target_oof}: {e}")
+
     if CFG['use_wandb']:
         wandb.run.summary["oof_map3"] = oof_map3
         wandb.finish()
