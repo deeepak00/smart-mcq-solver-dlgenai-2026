@@ -290,7 +290,7 @@ def main():
     oof    = np.zeros((len(train_df), 5))
 
     # Make sure models dir exists
-    models_dir = os.path.abspath(os.path.join(base_dir, '../../models'))
+    models_dir = os.path.abspath(os.path.join(base_dir, '../../models/scratch'))
     os.makedirs(models_dir, exist_ok=True)
 
     t_start = time.time()
