@@ -114,10 +114,10 @@ def main():
         config={
             "max_features": 300000,
             "ngram_range": (1, 2),
-            "min_df": 2,
-            "max_df": 0.95,
+            "min_df": 5,
+            "max_df": 0.90,
             "sublinear_tf": True,
-            "C": 10.0,
+            "C": 2.0,
             "max_iter": 5000,
             "solver": "lbfgs",
             "class_weight": "balanced",
