@@ -108,16 +108,16 @@ def main():
 
     wandb.init(
         project="23f3004133-t22026",
-        name="tfidf-logistic-v1",
+        name="tfidf-logistic-v2",
         job_type="train",
         tags=["tfidf", "logistic"],
         config={
-            "max_features": 200000,
-            "ngram_range": (1, 3),
+            "max_features": 300000,
+            "ngram_range": (1, 2),
             "min_df": 2,
             "max_df": 0.95,
             "sublinear_tf": True,
-            "C": 5.0,
+            "C": 10.0,
             "max_iter": 5000,
             "solver": "lbfgs",
             "class_weight": "balanced",
