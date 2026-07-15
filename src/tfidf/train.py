@@ -102,7 +102,7 @@ def main():
 
     parser.add_argument("--train-path",default="/kaggle/input/competitions/smart-mcq-solver-challenge/train.csv")
     parser.add_argument("--output-dir",default="artifacts")
-    parser.add_argument("--n-splits",type=int,default=5)
+    parser.add_argument("--n-splits",type=int,default=10)
 
     args = parser.parse_args()
 
