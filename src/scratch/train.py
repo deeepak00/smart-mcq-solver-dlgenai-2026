@@ -38,12 +38,9 @@ def parse_args():
     p.add_argument('--bs', type=int, default=CFG['bs'])
     p.add_argument('--lr', type=float, default=CFG['lr'])
     p.add_argument('--seed', type=int, default=CFG['seed'])
-    p.add_argument('--use_wandb', action='store_true',
-                    help="Flag to enable logging to weights and biases")
-    p.add_argument('--wandb_project', type=str, default='smart-mcq-solver-scratch',
-                    help="Weights and biases project name")
-    p.add_argument('--wandb_run_name', type=str, default=None,
-                    help="Weights and biases run name")
+    p.add_argument('--use_wandb', action='store_true')
+    p.add_argument('--wandb_project', type=str, default='23f3004133-t22026')
+    p.add_argument('--wandb_run_name', type=str, default=None)
     return p.parse_args()
 
 
