@@ -10,9 +10,21 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
 
+import sys
+import os
+
+# Add project root and src/scratch directory to sys.path for robust imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 from utils import CFG, set_seed, get_device, softmax_np, map3, warmup_cosine
 from preprocessed import BpeTokenizerScratch, texts_from, precompute, MCQTensorDataset
-from ...models.scratch import ScratchMCQModel
+from models.scratch import ScratchMCQModel
 
 
 def parse_args():
@@ -26,6 +38,12 @@ def parse_args():
     p.add_argument('--bs', type=int, default=CFG['bs'])
     p.add_argument('--lr', type=float, default=CFG['lr'])
     p.add_argument('--seed', type=int, default=CFG['seed'])
+    p.add_argument('--use_wandb', action='store_true',
+                    help="Flag to enable logging to weights and biases")
+    p.add_argument('--wandb_project', type=str, default='smart-mcq-solver-scratch',
+                    help="Weights and biases project name")
+    p.add_argument('--wandb_run_name', type=str, default=None,
+                    help="Weights and biases run name")
     return p.parse_args()
 
 
@@ -42,6 +60,14 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     set_seed(CFG['seed'])
     device, use_amp = get_device()
+
+    if args.use_wandb:
+        import wandb
+        wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+            config=CFG
+        )
 
     train_df = pd.read_csv(os.path.join(args.data_path, 'train.csv'))
     test_df = pd.read_csv(os.path.join(args.data_path, 'test.csv'))
@@ -120,6 +146,7 @@ def main():
 
             model.eval()
             vlog, vlbl = [], []
+            val_loss_sum = 0.0
             with torch.no_grad():
                 for b in vl_ld:
                     ids = b['input_ids'].to(device)
@@ -128,6 +155,8 @@ def main():
                     lbl = b['labels'].to(device)
                     with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                         logits = model(ids, tids, mask)
+                        loss = F.cross_entropy(logits, lbl, label_smoothing=CFG['label_smoothing'])
+                    val_loss_sum += loss.item()
                     vlog.append(logits.cpu().numpy())
                     vlbl.append(lbl.cpu().numpy())
 
@@ -135,7 +164,19 @@ def main():
             vlbl = np.concatenate(vlbl)
             vm3 = map3(vlbl, softmax_np(vlog))
             vacc = (vlog.argmax(1) == vlbl).mean()
-            print(f"Ep{ep + 1:02d} | loss={tl / len(tr_ld):.4f} | acc={vacc:.4f} | map3={vm3:.4f}")
+            val_loss = val_loss_sum / len(vl_ld)
+            print(f"Ep{ep + 1:02d} | loss={tl / len(tr_ld):.4f} | val_loss={val_loss:.4f} | acc={vacc:.4f} | map3={vm3:.4f}")
+
+            if args.use_wandb:
+                import wandb
+                wandb.log({
+                    f"fold{fold}/epoch": ep + 1,
+                    f"fold{fold}/train_loss": tl / len(tr_ld),
+                    f"fold{fold}/val_loss": val_loss,
+                    f"fold{fold}/val_acc": vacc,
+                    f"fold{fold}/val_map3": vm3,
+                    f"fold{fold}/lr": opt.param_groups[0]['lr'],
+                })
 
             if vm3 > best:
                 best = vm3
@@ -164,6 +205,12 @@ def main():
                 'best_map3': float(best),
             }, f, indent=2)
         print(f"Saved fold {fold} artifacts to {fold_dir}")
+
+        if args.use_wandb:
+            import wandb
+            wandb.log({
+                f"fold{fold}/best_val_map3": best
+            })
 
         # OOF
         vpred = []
@@ -194,7 +241,13 @@ def main():
         torch.cuda.empty_cache()
 
     oof_probs = softmax_np(oof)
-    print("OOF MAP@3:", map3(y, oof_probs))
+    oof_map3 = map3(y, oof_probs)
+    print("OOF MAP@3:", oof_map3)
+
+    if args.use_wandb:
+        import wandb
+        wandb.log({"oof_map3": oof_map3})
+        wandb.finish()
 
     np.save(os.path.join(args.output_dir, 'oof_logits.npy'), oof)
     np.save(os.path.join(args.output_dir, 'test_logits.npy'), test_p)

@@ -8,9 +8,21 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
+import sys
+import os
+
+# Add project root and src/scratch directory to sys.path for robust imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 from utils import IDX2LABEL, get_device
 from preprocessed import BpeTokenizerScratch, precompute, MCQTensorDataset
-from ...models.scratch import ScratchMCQModel
+from models.scratch import ScratchMCQModel
 
 
 def parse_args():
