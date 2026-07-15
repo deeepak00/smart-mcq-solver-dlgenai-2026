@@ -24,6 +24,13 @@ from sklearn.linear_model import LogisticRegression
 #     )
 
 
+
+
+
+
+
+
+
 # def build_vectorizer():
 #     return TfidfVectorizer(
 #         max_features=300000,
@@ -46,22 +53,59 @@ from sklearn.linear_model import LogisticRegression
 #     )
 
 
+
+
+
+
+
+
+
+# def build_vectorizer():
+#     return TfidfVectorizer(
+#         max_features=300000,
+#         ngram_range=(1, 2),
+#         lowercase=True,
+#         strip_accents='unicode',
+#         sublinear_tf=True,
+#         min_df=5,
+#         max_df=0.90
+#     )
+
+
+# def build_model(solver='lbfgs'):
+#     return LogisticRegression(
+#         C=2.0,
+#         max_iter=5000,
+#         solver=solver,
+#         class_weight='balanced',
+#         n_jobs=-1
+#     )
+
+
+
+
+
+
+
+
+
+
 def build_vectorizer():
     return TfidfVectorizer(
-        max_features=300000,
-        ngram_range=(1, 2),
+        max_features=500000,
+        ngram_range=(1, 3),
         lowercase=True,
         strip_accents='unicode',
         sublinear_tf=True,
         min_df=5,
-        max_df=0.90
+        max_df=0.85
     )
 
 
-def build_model(solver='lbfgs'):
+def build_model(solver='saga'):
     return LogisticRegression(
-        C=2.0,
-        max_iter=5000,
+        C=10.0,
+        max_iter=10000,
         solver=solver,
         class_weight='balanced',
         n_jobs=-1
