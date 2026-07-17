@@ -34,20 +34,20 @@ IDX2LABEL = {idx: opt for idx, opt in enumerate(OPTIONS)}
 
 
 CFG = {
-    'folds': 10,
+    'folds': 5,
     'epochs': 10,
     'bs': 24,
-    'lr': 2.5e-5,
+    'lr': 2.5e-2,
     'wd': 0.02,
     'd_model': 256,
     'conv_ch': 256,
     'hidden': 256,
-    'max_len': 128,
-    'drop': 0.5,
+    'max_len': 256,
+    'drop': 0.1,
     'patience': 3,
     'label_smoothing': 0.08,
     'warmup_frac': 0.1,
-    'max_vocab': 50000,
+    'max_vocab': 40000,
     'seed': 42,
 }
 
