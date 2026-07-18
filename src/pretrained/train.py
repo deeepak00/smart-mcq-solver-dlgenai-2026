@@ -16,12 +16,12 @@ from ...models.pretrained import build_model, build_training_args, build_trainer
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--train_csv", default="/kaggle/input/competitions/smart-mcq-solver-challenge/train.csv")
-    p.add_argument("--output_dir", default="/kaggle/working/saved_models")
+    p.add_argument("--output_dir", default="/kaggle/working/pretrained_model")
     p.add_argument("--model_name", default=MODEL_NAME)
     p.add_argument("--folds", type=int, default=FOLDS)
     p.add_argument("--max_len", type=int, default=MAX_LEN)
     p.add_argument("--seed", type=int, default=SEED)
-    p.add_argument("--wandb_project", default="smart-mcq-solver")
+    p.add_argument("--wandb_project", default="23f3004133-t22026")
     p.add_argument("--wandb_run_name", default=None)
     return p.parse_args()
 
