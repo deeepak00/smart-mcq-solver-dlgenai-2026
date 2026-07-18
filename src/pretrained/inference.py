@@ -10,7 +10,7 @@ from transformers import AutoTokenizer, Trainer, TrainingArguments
 
 from utils import INV_MAP, MAX_LEN, get_device, silence_warnings
 from preprocessed import DataCollatorForMultipleChoice, load_test_df, prepare_test_datasets
-from ...models.pretrained import build_model
+from models.pretrained import build_model
 
 
 def parse_args():
