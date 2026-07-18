@@ -1,7 +1,7 @@
 from transformers import AutoModelForMultipleChoice, TrainingArguments, Trainer, EarlyStoppingCallback
 
-from ..src.pretrained.preprocessed import DataCollatorForMultipleChoice
-from ..src.pretrained.utils import compute_metrics
+from src.pretrained.preprocessed import DataCollatorForMultipleChoice
+from src.pretrained.utils import compute_metrics
 
 
 def build_model(model_name_or_path, device):

@@ -8,8 +8,8 @@ import torch
 import wandb
 from sklearn.model_selection import StratifiedKFold
 
-from utils import FOLDS, MAX_LEN, MODEL_NAME, SEED, get_device, set_seed, silence_warnings
-from preprocessed import load_tokenizer, load_train_df, prepare_fold_datasets
+from .utils import FOLDS, MAX_LEN, MODEL_NAME, SEED, get_device, set_seed, silence_warnings
+from .preprocessed import load_tokenizer, load_train_df, prepare_fold_datasets
 from models.pretrained import build_model, build_training_args, build_trainer
 
 
