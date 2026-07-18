@@ -7,7 +7,7 @@ from datasets import Dataset
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase, PaddingStrategy
 
-from utils import LABEL_MAP, OPTION_COLS
+from .utils import LABEL_MAP, OPTION_COLS
 
 
 def load_tokenizer(model_name):
