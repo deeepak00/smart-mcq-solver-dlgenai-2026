@@ -8,8 +8,8 @@ from transformers import logging as hf_logging
 
 # ================= CONFIG (unchanged from the original notebook) =================
 MODEL_NAME = "roberta-large"
-FOLDS = 4
-MAX_LEN = 320
+FOLDS = 5
+MAX_LEN = 386
 SEED = 42
 
 LABEL_MAP = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
